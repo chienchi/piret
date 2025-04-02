@@ -5,7 +5,7 @@ library(limma)
 library(edgeR)
 library(dplyr)
 library(ggplot2)
-# library(pheatmap)
+library(pheatmap)
 library(reshape2)
 
 
@@ -49,6 +49,8 @@ pair.comb <- function(exp_des){
 # read the output of featureCounts
 read_counts <- read.table(reads_file, sep = "\t", header = TRUE, comment.char = "#", check.names=FALSE)
 # read_counts_only <- read_counts[, -c(1:6)]
+# Convert count columns to numeric 
+read_counts[, -c(1:6)] <- lapply(read_counts[, -c(1:6)], as.numeric)  
 read_counts$total <- rowSums(read_counts[, -c(1:6)])
 read_counts_non0 <- dplyr::filter(read_counts, total > 0)
 read_counts_non0$total <- NULL
@@ -168,15 +170,15 @@ if(nrow(read_counts_non0) < 2 ){
         rpkm_results_sort$sum <- rowSums(rpkm_results_sort)
         rpkm_results_sort <- dplyr::arrange(rpkm_results_sort, desc(sum))
         rpkm_results_sort$sum <- NULL
-        # if (nrow(rpkm_results_sort) > 99) {
-        #     pheatmap(as.matrix(head(rpkm_results_sort, 100)), legend=TRUE, filename=out_rpkm_heatmap_pdf)
-        #     pheatmap(as.matrix(head(rpkm_results_sort, 100)), legend=TRUE, filename=out_rpkm_heatmap_png)
-        # }
-        # else
-        # {
-        #     pheatmap(as.matrix(rpkm_results_sort), legend=TRUE, filename=out_rpkm_heatmap_pdf)
-        #     pheatmap(as.matrix(rpkm_results_sort), legend=TRUE, filename=out_rpkm_heatmap_png)
-        # }
+        if (nrow(rpkm_results_sort) > 99) {
+             pheatmap(as.matrix(head(rpkm_results_sort, 100)), legend=TRUE, filename=out_rpkm_heatmap_pdf)
+             pheatmap(as.matrix(head(rpkm_results_sort, 100)), legend=TRUE, filename=out_rpkm_heatmap_png)
+        }
+        else
+        {
+            pheatmap(as.matrix(rpkm_results_sort), legend=TRUE, filename=out_rpkm_heatmap_pdf)
+            pheatmap(as.matrix(rpkm_results_sort), legend=TRUE, filename=out_rpkm_heatmap_png)
+        }
         ################# boxplot of RPKM #############################################
         rpkm_data_boxplot <- merge(x=rpkm_data, y=group_table2)
         out_rpkm_violin_pdf <- file.path(violin_dir, paste(strsplit(basename(reads_file), ".tsv")[[1]], "_rpkm_violin.pdf", sep=""))
