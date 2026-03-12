@@ -119,20 +119,15 @@ class conver2json(luigi.Task):
     def gff2json(self, out_json):
         """A function that converts a gff file to JSON file."""
         # read in the gff file to a database
-        if os.path.exists(os.path.join(self.workdir, "processes",
-                                       "databases")) is False:
-            os.makedirs(os.path.join(self.workdir, "processes",
-                                     "databases"))
+        if os.path.exists(os.path.join(self.workdir, "processes", "databases")) is False:
+            os.makedirs(os.path.join(self.workdir, "processes", "databases"))
         db_out = os.path.join(self.workdir, "processes", "databases",
-                              self.kingdom,
-                              "piret.db")
+                            self.kingdom, "piret.db")
         if os.path.exists(db_out) is False:
-            # create db if not already present
             db = gffutils.create_db(self.gff_file, dbfn=db_out, force=True,
                                     keep_order=True,
                                     merge_strategy="create_unique")
         else:
-            # read db if its already present
             db = gffutils.FeatureDB(db_out, keep_order=True)
 
         if "edgeR" in self.method:
@@ -167,12 +162,17 @@ class conver2json(luigi.Task):
         read_summ_exon = self.read_summary("exon")
         if self.NovelRegions is True:
             read_summ_NovelRegion = self.read_summary("NovelRegion")
+        else:
+            read_summ_NovelRegion = {}
 
         emaps = self.get_emapper()
+
         with open(out_json, "w") as json_file:
-            json_list = []
+            json_file.write("[\n")
+            first = True
+
             for feat_obj in db.all_features():
-                feat_dic = {}  # an empty dictionary to append features
+                feat_dic = {}
                 feat_dic['seqid'] = feat_obj.seqid
                 feat_dic['id'] = feat_obj.id
                 feat_dic['source'] = feat_obj.source
@@ -192,6 +192,8 @@ class conver2json(luigi.Task):
                 except KeyError:
                     pass
                 feat_dic['extra'] = feat_obj.extra
+
+                nt_obj = None
                 if feat_type != "region":
                     try:
                         nt_seqs = feat_obj.sequence(self.fasta_file)
@@ -199,100 +201,69 @@ class conver2json(luigi.Task):
                         feat_dic['nt_seq'] = nt_seqs
                     except KeyError:
                         pass
-# ============================================================================#
+
                 if feat_type == "CDS":
-                    # translate the CDS
-                    feat_dic['aa_seqs'] = self.translate(nt_obj, "CDS")
+                    if nt_obj is not None:
+                        feat_dic['aa_seqs'] = self.translate(nt_obj, "CDS")
 
-                    # assign FPKMs and FPMs
                     self.assign_scores(feat_dic=feat_dic,
-                                       edger_sdic=edger_summ_cds,
-                                       deseq_sdic=deseq_summ_cds,
-                                       feat_id=feat_obj.id)
-                    # assign read numbers
-                    try:
-                        feat_dic["read_count"] = read_summ_cds[feat_obj.id]
-                    except KeyError:
-                        feat_dic["read_count"] = None
-                    # assign dge information
+                                    edger_sdic=edger_summ_cds,
+                                    deseq_sdic=deseq_summ_cds,
+                                    feat_id=feat_obj.id)
+                    feat_dic["read_count"] = read_summ_cds.get(feat_obj.id, None)
+
                     self.assign_dges(feat_type="CDS", feat_dic=feat_dic,
-                                     feat_id=feat_obj.id,
-                                     method="edgeR", dge_dict=dge_edger_cds)
+                                    feat_id=feat_obj.id,
+                                    method="edgeR", dge_dict=dge_edger_cds)
                     self.assign_dges(feat_type="CDS", feat_dic=feat_dic,
-                                     feat_id=feat_obj.id,
-                                     method="DESeq2", dge_dict=dge_deseq_cds)
-                    # assign EC#s, KOs, etc.
-                    try:
-                        feat_dic["emapper"] = emaps[feat_obj.id]
-                    except KeyError:
+                                    feat_id=feat_obj.id,
+                                    method="DESeq2", dge_dict=dge_deseq_cds)
+
+                    if emaps is not None:
+                        feat_dic["emapper"] = emaps.get(feat_obj.id, None)
+                    else:
                         feat_dic["emapper"] = None
-# ============================================================================#
-                elif feat_type == "NovelRegion":
-                    try:
-                        feat_dic["read_count"] = read_summ_NovelRegion[feat_obj.id]
-                    except KeyError:
-                        feat_dic["read_count"] = None
-# ============================================================================#
-                elif feat_type == 'rRNA':
-                    try:
-                        feat_dic["read_count"] = read_summ_rRNA[feat_obj.id]
-                    except KeyError:
-                        feat_dic["read_count"] = None
-# ============================================================================#
-                elif feat_type == 'tRNA':
-                    try:
-                        feat_dic["read_count"] = read_summ_tRNA[feat_obj.id]
-                    except KeyError:
-                        feat_dic["read_count"] = None
-# ============================================================================#
-                elif feat_type == 'exon':
-                    try:
-                        feat_dic["read_count"] = read_summ_exon[feat_obj.id]
-                    except KeyError:
-                        feat_dic["read_count"] = None
-# ============================================================================#
-                elif feat_type == "gene":
-                    # assign scores
-                    self.assign_scores(feat_dic=feat_dic,
-                                       edger_sdic=edger_summ_genes,
-                                       deseq_sdic=deseq_summ_genes,
-                                       feat_id=feat_obj.id)
-                    # assign read numbers
-                    try:
-                        feat_dic["read_count"] = read_summ_gene[feat_obj.id]
-                    except KeyError:
-                        feat_dic["read_count"] = None
-                    # assign ballgown info
-                    try:
-                        feat_dic["ballgown_values"] = ballgown_gene_pm[feat_obj.id]
-                    except KeyError:
-                        feat_dic["ballgown_values"] = None
-                    
-                    # assign stringtie
-                    try:
-                        feat_dic["stringtie_values"] = stringtie_tpms[feat_obj.id]
-                    except KeyError:
-                        feat_dic["stringtie_values"] = None
-                    # assign dge information
-                    self.assign_dges(feat_type="gene", feat_dic=feat_dic,
-                                     feat_id=feat_obj.id,
-                                     method="edgeR", dge_dict=dge_edger_gene)
-                    self.assign_dges(feat_type="gene", feat_dic=feat_dic,
-                                     feat_id=feat_obj.id,
-                                     method="DESeq2", dge_dict=dge_deseq_gene)
-                else:
-                    pass
-                # just to make sure that keys are strings, else json dump fails
-                feat_dic_str = {}
-                for key, value in feat_dic.items():
-                    feat_dic_str[str(key)] = value
 
-                json_list.append(feat_dic_str)
-            json.dump(json_list, json_file, indent=4)
-            # meta_list = ["seqid", "id", "source", "featuretype", "start",
-            #              "end", "length", "strand", "frame", "locus_tag",
-            #              "extra"]
-            # df = pd.io.json.json_normalize(json_list, errors="ignore")
+                elif feat_type == "NovelRegion":
+                    feat_dic["read_count"] = read_summ_NovelRegion.get(feat_obj.id, None)
+
+                elif feat_type == "rRNA":
+                    feat_dic["read_count"] = read_summ_rRNA.get(feat_obj.id, None)
+
+                elif feat_type == "tRNA":
+                    feat_dic["read_count"] = read_summ_tRNA.get(feat_obj.id, None)
+
+                elif feat_type == "exon":
+                    feat_dic["read_count"] = read_summ_exon.get(feat_obj.id, None)
+
+                elif feat_type == "gene":
+                    self.assign_scores(feat_dic=feat_dic,
+                                    edger_sdic=edger_summ_genes,
+                                    deseq_sdic=deseq_summ_genes,
+                                    feat_id=feat_obj.id)
+                    feat_dic["read_count"] = read_summ_gene.get(feat_obj.id, None)
+                    feat_dic["ballgown_values"] = ballgown_gene_pm.get(feat_obj.id, None)
+                    feat_dic["stringtie_values"] = stringtie_tpms.get(feat_obj.id, None)
+
+                    self.assign_dges(feat_type="gene", feat_dic=feat_dic,
+                                    feat_id=feat_obj.id,
+                                    method="edgeR", dge_dict=dge_edger_gene)
+                    self.assign_dges(feat_type="gene", feat_dic=feat_dic,
+                                    feat_id=feat_obj.id,
+                                    method="DESeq2", dge_dict=dge_deseq_gene)
+
+                # ensure string keys
+                feat_dic_str = {str(k): v for k, v in feat_dic.items()}
+
+                if not first:
+                    json_file.write(",\n")
+                else:
+                    first = False
+
+                json.dump(feat_dic_str, json_file)
+
+            json_file.write("\n]\n")
+
 
 
     def assign_scores(self, feat_dic, edger_sdic, deseq_sdic, feat_id):
