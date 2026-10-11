@@ -53,8 +53,7 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
     if (missing(alpha)) {
         alpha <- if (is.null(S4Vectors::metadata(object)$alpha)) {
             0.1
-        }
-        else {
+        } else {
             S4Vectors::metadata(object)$alpha
         }
     }
@@ -124,13 +123,11 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
     summary.counts.t = summary.counts.t[-1, ]
     write.csv(summary.counts.t, file = summary_outfile )
  
-    # count 0s
-    check_zero = apply(read_counts.non0, 1, function(x) sum(x == 0))
-    check = all(lapply(check_zero, function(x) x > 0))
-    if (check[[1]]) {
-        warning("every gene contains at least one zero, cannot compute log geometric means, wont calculate metrices.")
-    } else{
-
+    # NOTE: original script bailed out here whenever every gene had at least
+    # one zero count, because DESeq2's default size-factor estimator
+    # (type="ratio") needs a fully-nonzero row to compute geometric means.
+    # Using type="poscounts" instead computes size factors from only the
+    # positive counts per gene, so this no longer needs to abort.
     deseq_ds <- DESeq2::DESeqDataSetFromMatrix(countData = read_counts.non0,
                                               colData = group_table,
                                               design = ~ Group,
@@ -140,14 +137,9 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
                                             featureData)
     # remove genes without any counts
     deseq_ds <- deseq_ds[base::rowSums(DESeq2::counts(deseq_ds)) > 0, ]
+    deseq_ds <- DESeq2::estimateSizeFactors(deseq_ds, type = "poscounts")
 #=============================================================================#
 #   fpkm table
-    # count the number of 0s
-    # check_zero = apply(read_counts, 1, function(x) sum(x == 0))
-    check = all(lapply(check_zero, function(x) x > 0))
-    # if (check[[1]]) {
-        # warning("every gene contains at least one zero, cannot compute log geometric means")
-    # } else {
 #=============================================================================#
         fpkm_results <- DESeq2::fpkm(deseq_ds, robust=TRUE)
         print(head(fpkm_results))
@@ -180,8 +172,7 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
             pheatmap::pheatmap(as.matrix(head(fpkm_results_sort, 100)), legend=TRUE, filename = fpkm_heatmap_pdf)
             pheatmap::pheatmap(as.matrix(head(fpkm_results_sort, 100)), legend=TRUE, filename = fpkm_heatmap_png)
 
-        } 
-        else{
+        } else{
             pheatmap::pheatmap(as.matrix(fpkm_results), legend=TRUE, filename = fpkm_heatmap_pdf)
             pheatmap::pheatmap(as.matrix(fpkm_results), legend=TRUE, filename = fpkm_heatmap_png)
         }
@@ -220,8 +211,7 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
             pheatmap::pheatmap(as.matrix(head(fpm_results_sort, 100)), legend=TRUE, filename = fpm_heatmap_pdf)
             pheatmap::pheatmap(as.matrix(head(fpm_results_sort, 100)), legend=TRUE, filename = fpm_heatmap_png)
 
-        } 
-        else{
+        } else{
             pheatmap::pheatmap(as.matrix(fpm_results), legend=TRUE, filename = fpm_heatmap_pdf)
             pheatmap::pheatmap(as.matrix(fpm_results), legend=TRUE, filename = fpm_heatmap_png)
         }
@@ -246,7 +236,7 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
         ggplot2::ggsave(violin_pdf, f_violin, device = "pdf")
         ggplot2::ggsave(violin_png, f_violin, device = "png")
 #=============================================================================#
-    dds <- DESeq2::DESeq(deseq_ds)
+    dds <- DESeq2::DESeq(deseq_ds, sfType = "poscounts")
     pca_pdf <- file.path(out_dir,
                          paste(strsplit(basename(reads_file), ".tsv")[[1]],
                                "_PCA.pdf", sep = ""))
@@ -289,16 +279,10 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
     ggplot2::ggsave(histogram_pdf, f_hist, device = "pdf")
     ggplot2::ggsave(histogram_png, f_hist, device = "png")
 
-    }
-
 if (feature_name %in% c("CDS", "gene", "transcript", "exon", "NovelRegion")){
-    if (check[[1]]) {
-        warning("every gene contains at least one zero, cannot compute log geometric means, wont calculate metrices.")
-    } 
-    else {
 
     # calculate size factors
-    dds <- DESeq2::DESeq(deseq_ds)
+    dds <- DESeq2::DESeq(deseq_ds, sfType = "poscounts")
     # get all possible pairs
     all_pairs <- pair.comb(group_file)
 
@@ -350,8 +334,6 @@ if (feature_name %in% c("CDS", "gene", "transcript", "exon", "NovelRegion")){
         write.csv(deseq_diff, out_table)
         write.csv(deseq_sig, out_table_sig)
 
-    } 
-# }
     }
 }
 #TODO: Need to make sure that all gff lines have IDs
