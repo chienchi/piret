@@ -240,6 +240,13 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
         ggplot2::ggsave(violin_pdf, f_violin, device = "pdf")
         ggplot2::ggsave(violin_png, f_violin, device = "png")
 #=============================================================================#
+    # DESeq2's dispersion fit (locfit) cannot run with too few features
+    # (e.g. "newsplit: out of vertex space"); skip dispersion-dependent
+    # steps rather than error out when there isn't enough data
+    enough_features <- nrow(deseq_ds) >= 10
+    if (!enough_features) {
+        print("Not enough features to calculate dispersion factors!")
+    } else {
     dds <- DESeq2::DESeq(deseq_ds, sfType = "poscounts")
     pca_pdf <- file.path(out_dir,
                          paste(strsplit(basename(reads_file), ".tsv")[[1]],
@@ -252,6 +259,7 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
     pca <- DESeq2::plotPCA(dds_vts, intgroup = c("Group"))
     ggplot2::ggsave(pca_pdf, pca, device = "pdf")
     ggplot2::ggsave(pca_png, pca, device = "png")
+    }
 #=============================================================================#
     df <- utils::read.csv(out_fpm, row.names = 1)
     histogram_pdf <- file.path(out_dir,
@@ -283,7 +291,7 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
     ggplot2::ggsave(histogram_pdf, f_hist, device = "pdf")
     ggplot2::ggsave(histogram_png, f_hist, device = "png")
 
-if (feature_name %in% c("CDS", "gene", "transcript", "exon", "NovelRegion")){
+if (enough_features && feature_name %in% c("CDS", "gene", "transcript", "exon", "NovelRegion")){
 
     # calculate size factors
     dds <- DESeq2::DESeq(deseq_ds, sfType = "poscounts")
