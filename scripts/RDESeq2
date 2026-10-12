@@ -37,12 +37,8 @@ out_dir <- file.path(opt$out_dir, feature_name)
 ifelse(!dir.exists(out_dir), dir.create(out_dir), print("already exist"))
 #=============================================================================#
 # Create pairwise comparisons to find DGEs
-pair.comb <- function(exp_des){
-        # get all pariwise combination from experimental design file
-        exp_desn <- read.table(exp_des, sep = "\t", header = TRUE,
-                               comment.char = "", colClasses=c("character"))
-        categories <- unique(exp_desn$Group)
-        # pairs <- combn(categories, 2, simplify = FALSE)
+pair.comb <- function(categories){
+        # get all pairwise combinations of the given group categories
         pairs <- subset(expand.grid(rep(list(categories),2), stringsAsFactors = F), Var1 != Var2)
         return(pairs)
     }
@@ -96,7 +92,17 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
     colnames(group_table) <- c("Files", "Group")
     read_counts.non0 <- read_counts.non0[, rownames(group_table)]
     group_table <- dplyr::select(group_table, Group)
-   
+
+    # drop samples with zero counts for every feature; DESeq2's poscounts
+    # size-factor estimator cannot compute a size factor for such a sample
+    zero_samples <- colnames(read_counts.non0)[colSums(read_counts.non0) == 0]
+    if (length(zero_samples) > 0) {
+        warning(paste("dropping sample(s) with all-zero counts:",
+                       paste(zero_samples, collapse = ", ")))
+        read_counts.non0 <- read_counts.non0[, !(colnames(read_counts.non0) %in% zero_samples)]
+        group_table <- group_table[!(rownames(group_table) %in% zero_samples), , drop = FALSE]
+    }
+
     #rearrange/clean the table and rewrite the column to display in EDGE
     outfile <- paste(strsplit(reads_file ,".tsv"), "_sorted.csv", sep="")
     if (!file.exists(outfile) || file.size(outfile) == 0) {
@@ -111,17 +117,21 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
     
     # Reformat summary files for EDGE display
     summary_file <- paste(reads_file, ".summary", sep="")
-    summary_outfile <- paste(strsplit(reads_file ,".summary"), "_summary.csv", sep="")
-    summary.counts <- read.table(summary_file, sep = "\t", header = TRUE, comment.char = "#",check.names=FALSE)
-    names(summary.counts) <- gsub(".*mapping.", "", names(summary.counts),
-                               perl = TRUE)
-    names(summary.counts) <- gsub("_srt.bam", "", names(summary.counts), perl = TRUE)
-    names(summary.counts) <- base::gsub("^.*[./]", "", names(summary.counts))
-    summary.counts <- summary.counts[c("Status", base::row.names(group_table))]
-    summary.counts.t <- as.data.frame(t(summary.counts))
-    colnames(summary.counts.t) <- as.character(unlist(summary.counts.t[1,]))
-    summary.counts.t = summary.counts.t[-1, ]
-    write.csv(summary.counts.t, file = summary_outfile )
+    if (file.exists(summary_file)) {
+        summary_outfile <- paste(strsplit(reads_file ,".summary"), "_summary.csv", sep="")
+        summary.counts <- read.table(summary_file, sep = "\t", header = TRUE, comment.char = "#",check.names=FALSE)
+        names(summary.counts) <- gsub(".*mapping.", "", names(summary.counts),
+                                   perl = TRUE)
+        names(summary.counts) <- gsub("_srt.bam", "", names(summary.counts), perl = TRUE)
+        names(summary.counts) <- base::gsub("^.*[./]", "", names(summary.counts))
+        summary.counts <- summary.counts[c("Status", base::row.names(group_table))]
+        summary.counts.t <- as.data.frame(t(summary.counts))
+        colnames(summary.counts.t) <- as.character(unlist(summary.counts.t[1,]))
+        summary.counts.t = summary.counts.t[-1, ]
+        write.csv(summary.counts.t, file = summary_outfile )
+    } else {
+        warning(paste("summary file", summary_file, "not found; skipping EDGE summary reformat"))
+    }
  
     # NOTE: original script bailed out here whenever every gene had at least
     # one zero count, because DESeq2's default size-factor estimator
@@ -186,9 +196,6 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
         df_results <- dplyr::filter_all(as.data.frame(fpkm_results), dplyr::any_vars(. != 0))
         f_data <- reshape2::melt(as.data.frame(df_results),
                              variable.name = "sample", value.name = "FPKM")
-        group_table <- read.delim(group_file, row.names = 1)
-        group_table <- dplyr::select(group_table, "Group")
-        
         group_table2 <- tibble::rownames_to_column(group_table, "sample")
         f_data_boxplot <- merge(x = f_data, y = group_table2)
         f_violin <- ggplot2::ggplot(data = f_data_boxplot, mapping = ggplot2::aes_string(x = "Group", y = "FPKM")) +
@@ -226,9 +233,6 @@ DESeq2_summary <- function(object, alpha, pair1, pair2, feature_name, outdir){
         df_results <- dplyr::filter_all(as.data.frame(fpm_results), dplyr::any_vars(. != 0))
         f_data <- reshape2::melt(as.data.frame(df_results),
                              variable.name = "sample", value.name = "FPM")
-        group_table <- read.delim(group_file, row.names = 1)
-        group_table <- dplyr::select(group_table, "Group")
-        
         group_table2 <- tibble::rownames_to_column(group_table, "sample")
         f_data_boxplot <- merge(x = f_data, y = group_table2)
         f_violin <- ggplot2::ggplot(data = f_data_boxplot, mapping = ggplot2::aes_string(x = "Group", y = "FPM")) +
@@ -283,8 +287,9 @@ if (feature_name %in% c("CDS", "gene", "transcript", "exon", "NovelRegion")){
 
     # calculate size factors
     dds <- DESeq2::DESeq(deseq_ds, sfType = "poscounts")
-    # get all possible pairs
-    all_pairs <- pair.comb(group_file)
+    # get all possible pairs, restricted to groups still present after
+    # dropping any all-zero-count samples
+    all_pairs <- pair.comb(unique(as.character(group_table$Group)))
 
     for (n in 1:nrow(all_pairs) ) {
         # folders for each comparisons

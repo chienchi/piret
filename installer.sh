@@ -18,19 +18,23 @@ echo
 exec &> >(tee -a  install.log)
 exec 2>&1 # copies stderr onto stdout
 
-conda create -n $env python=3.6.6 --yes
-conda install -c bioconda faqcs -n $env --yes
-conda install -c bioconda star hisat2 subread -n $env --yes
-conda install -c bioconda subread stringtie -n $env --yes
-conda install -c bioconda samtools bamtools bedtools -n $env --yes
-conda install -c bioconda diamond=0.9.24 -n $env --yes
-conda install -c bioconda perl-lwp-protocol-https -n $env --yes
-conda install -c bioconda perl-json -n $env --yes
-conda install -c conda-forge time -n $env --yes
-conda install -c r r-tidyverse r-reshape2 r-optparse r-pheatmap -n $env --yes
-conda install -c bioconda bioconductor-deseq2 bioconductor-edger bioconductor-gage bioconductor-ballgown -n $env --yes
+mamba create -n $env python=3.6.6 numpy=1.14 --yes
+mamba install -c conda-forge r-tidyverse r-reshape2 r-optparse r-pheatmap r-stringi r-plotly icu time -n $env --yes
+mamba install -c bioconda bioconductor-deseq2 bioconductor-edger bioconductor-gage bioconductor-ballgown -n $env --yes
+mamba install -c bioconda perl-lwp-protocol-https -n $env --yes
+mamba install -c bioconda perl-json -n $env --yes
+mamba install -c bioconda samtools bamtools bedtools subread stringtie star hisat2 faqcs -n $env --yes
+
+envPath=$(mamba info --base)/envs/$env
+
+cd $envPath/bin
+wget http://github.com/bbuchfink/diamond/releases/download/v0.9.26/diamond-linux64.tar.gz 
+tar xvzf diamond-linux64.tar.gz 
+chmod 775 diamond
+
+cd $ROOTDIR
 export PATH=/opt/conda/envs/piret_env/bin:$PATH
-source activate $env
+mamba activate $env
 rm -rf thirdparty/eggnog-mapper
 git clone https://github.com/mshakya/eggnog-mapper.git thirdparty/eggnog-mapper
 # R packages
